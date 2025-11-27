@@ -12,44 +12,45 @@ export const DashboardPanel: React.FC = () => {
   return (
     <Box>
       <Grid container spacing={3}>
-        {/* Resumen */}
-        <Grid item xs={12} md={4}>
-          {summary && <Fade in timeout={400}><div><SummaryCard summary={summary} /></div></Fade>}
-        </Grid>
-        
-        {/* Proyección de Pagos */}
-        <Grid item xs={12} md={8}>
+        {/* Proyección de Pagos (top full width) */}
+        <Grid item xs={12}>
           <ProjectionsCard detail={cardDetail} aggregate={aggregateProjections} />
         </Grid>
         
-        {/* Gastos por Categorías */}
+        {/* Gastos por Categorías (left) */}
         <Grid item xs={12} md={6}>
           <CategoriesCard detail={cardDetail} aggregate={aggregateCategories} />
         </Grid>
         
-        {/* Tarjetas */}
+        {/* Resumen y Tarjetas (right column) */}
         <Grid item xs={12} md={6}>
-          <Card variant="outlined">
-            <CardContent>
-              <Typography variant="h6" fontWeight={600} gutterBottom>Tarjetas</Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ mb: 2, display: 'block' }}>Selecciona una tarjeta para ver proyecciones y categorías</Typography>
-              {summary && (
-                <TextField
-                  select
-                  fullWidth
-                  size="small"
-                  label="Tarjeta"
-                  value={selectedCard || ''}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => selectCard(e.target.value || null)}
-                >
-                  <MenuItem value="">Todas las Tarjetas</MenuItem>
-                  {summary.cards.map((c: { id: string; name: string; balance: number }) => (
-                    <MenuItem key={c.id} value={c.id}>{c.name} ({formatCurrency(c.balance, 0)})</MenuItem>
-                  ))}
-                </TextField>
-              )}
-            </CardContent>
-          </Card>
+          <Stack spacing={3} sx={{ height: '100%' }}>
+            {/* Resumen */}
+            {summary && <Fade in timeout={400}><div><SummaryCard summary={summary} /></div></Fade>}
+            
+            {/* Tarjetas */}
+            <Card variant="outlined" sx={{ flex: 1 }}>
+              <CardContent sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                <Typography variant="h6" fontWeight={600} gutterBottom>Tarjetas</Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ mb: 2, display: 'block' }}>Selecciona una tarjeta para ver proyecciones y categorías</Typography>
+                {summary && (
+                  <TextField
+                    select
+                    fullWidth
+                    size="small"
+                    label="Tarjeta"
+                    value={selectedCard || ''}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => selectCard(e.target.value || null)}
+                  >
+                    <MenuItem value="">Todas las Tarjetas</MenuItem>
+                    {summary.cards.map((c: { id: string; name: string; balance: number }) => (
+                      <MenuItem key={c.id} value={c.id}>{c.name} ({formatCurrency(c.balance, 0)})</MenuItem>
+                    ))}
+                  </TextField>
+                )}
+              </CardContent>
+            </Card>
+          </Stack>
         </Grid>
       </Grid>
     </Box>

@@ -11,7 +11,7 @@ export const CategoriesCard: React.FC<Props> = ({ detail, aggregate }) => {
   return (
     <Card variant="outlined" sx={{ height: '100%' }}>
       <CardContent>
-        <Typography variant="h6" fontWeight={600} gutterBottom>Expense Categories</Typography>
+        <Typography variant="h6" fontWeight={600} gutterBottom>Categorías de Gastos</Typography>
         <Stack spacing={1.2}>
           {source.map(cat => {
             const pct = (cat.total / total) * 100;

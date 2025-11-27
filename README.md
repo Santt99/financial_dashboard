@@ -10,12 +10,15 @@ This project is a local full-stack prototype for a credit card financial dashboa
 
 ## Features Implemented
 
-- Register/Login (JWT)
-- Drag-and-drop file upload interface (adds mock transactions & regenerates projections)
-- Dashboard summary (total debt, upcoming payments)
-- Per-card view (transactions, category aggregates, projections)
-- Responsive single-column layout with centered dashboard
-- Minimalist Uber-inspired design
+- **Authentication**: Register/Login with JWT
+- **Statement Upload**: Drag-and-drop file upload interface with Gemini AI extraction
+- **Dashboard**: Summary view (total debt, upcoming payments, MSI overview)
+- **Per-Card View**: Transactions, category aggregates, 6-month balance projections
+- **MSI Management**: Track "Meses Sin Interés" (interest-free installments) by card
+- **Interest Analysis**: Dedicated view for analyzing MSI plans and payment schedules
+- **AI Chat Assistant**: Ask Gemini AI about your cards, debts, and MSI plans with real-time streaming responses
+- **Responsive Design**: Single-column layout with Material UI components
+- **Spanish Localization**: Full UI in Spanish (es-MX) with MXN currency
 
 ## Running Backend
 
@@ -72,16 +75,43 @@ frontend/src/
 ## AI-Powered Features
 
 ### Statement Processing with Gemini AI
-The app uses Google's Gemini API to automatically extract transactions from:
-- **PDF statements**: Extracts text and parses transaction data
-- **Image statements**: Uses vision capabilities to read scanned documents
+Automatically extract transactions from credit card statements:
+- **PDF Statements**: Text extraction and transaction parsing
+- **Image Statements**: Vision capabilities for scanned documents
+- Robust parsing for Mexican banks (BBVA, Citibanamex, Santander, HSBC, Amex, etc.)
+- MSI (Meses Sin Intereses) plans detection with monthly payment calculation
 
-To enable:
+### AI Chat Assistant (Real-time Streaming)
+Ask the AI advisor about your financial situation:
+- **Smart Greeting Detection**: Responds briefly to casual greetings without dumping data
+- **Contextual Answers**: Gemini receives full financial context (cards, balances, MSI plans)
+- **Real-Time Streaming**: Response text streams character-by-character with natural pacing
+- **Markdown Formatting**: Responses are formatted with headings, lists, and inline bold text
+- **Endpoints**:
+  - `POST /chat/ask` – Full response (non-streaming)
+  - `POST /chat/ask-stream` – Streaming response with natural delays
+
+**Example Questions**:
+- "¿Cuál es mi saldo total?" (What's my total balance?)
+- "¿Cuántos MSI tengo?" (How many MSI plans do I have?)
+- "Recomiéndame un plan de pago" (Recommend me a payment plan)
+- "¿Cuándo vence mi siguiente pago?" (When's my next payment due?)
+
+## Localization & Currency
+
+- **Language**: Full Spanish (Mexico) UI
+- **Currency**: MXN (Mexican Peso)
+- **Date Format**: DD/MM/YYYY
+- All financial amounts formatted with locale-specific separators
+
+## Gemini AI Setup
+
+To enable full AI features (statement extraction + chat):
 1. Get a free API key from [Google AI Studio](https://aistudio.google.com/app/apikey)
 2. Set `GEMINI_API_KEY` in your `.env` file
-3. Upload statements via drag-and-drop interface
+3. Chat and statement upload will now work with real AI processing
 
-Without an API key, the app falls back to generating sample data.
+Without an API key, the app falls back to mock data and responses.
 
 ## Security Notes
 - Access controlled via Bearer JWT in Authorization header.
@@ -92,16 +122,19 @@ Without an API key, the app falls back to generating sample data.
 ## Limitations (Prototype)
 - No persistence (restart clears data).
 - Gemini extraction accuracy depends on statement format quality.
+- Chat context includes all user cards (for accuracy, but design considerations for large portfolios).
 - No refresh token / token expiry handling on frontend.
 
 ## Suggested Next Steps
 - Add MongoDB persistence layer.
-- Fine-tune Gemini prompts for better extraction accuracy.
+- Enhance Gemini prompts for multi-language support and better extraction accuracy.
 - Add support for more statement formats (CSV, Excel).
-- Add charts (Material UI + Recharts or Chart.js) for categories & projections.
-- Improve error handling & loading states.
-- Unit tests for frontend (React Testing Library) and more backend coverage.
-- Add role-based access & password reset flows.
+- Persistent chat history (save conversations to DB).
+- Charts and visualizations (Recharts for spending trends, projections).
+- Advanced analytics: category trends, spending patterns, savings recommendations.
+- Improved error handling and loading states.
+- Unit tests (Jest/React Testing Library + pytest).
+- Role-based access control and password reset flows.
 
 ## License
 Prototype code – adapt freely.

@@ -49,7 +49,7 @@ export const FileUploadZone: React.FC = () => {
       setTimeout(() => setUploadResult(null), 8000);
     } catch (err) {
       console.error('❌ Upload failed:', err);
-      alert('Upload failed: ' + (err as Error).message);
+      alert('Error en la carga: ' + (err as Error).message);
     } finally {
       setIsUploading(false);
     }

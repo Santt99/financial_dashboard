@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime, timedelta
 
 from app.schemas.user import User
-from app.schemas.card import Card, CardSummary
+from app.schemas.card import Card, CardSummary, TransactionSummary
 from app.schemas.transaction import Transaction, CategoryAggregate
 from app.schemas.projection import MonthlyProjection
 from app.core.security import hash_password
@@ -85,22 +85,35 @@ class DataStore:
             )
         
         if existing_card:
-            # Update existing card with new statement data
-            existing_card.name = card_info.get("name", existing_card.name)
-            existing_card.issuer = card_info.get("issuer", existing_card.issuer)
-            if card_info.get("last4"):
-                existing_card.last4 = card_info.get("last4")
-            existing_card.credit_limit = float(card_info.get("credit_limit", existing_card.credit_limit))
-            existing_card.balance = float(card_info.get("balance", existing_card.balance))
-            existing_card.due_date_day = int(card_info.get("due_date_day") or existing_card.due_date_day)
+            # Only update if new statement is more recent (or no previous date)
+            new_statement_date = card_info.get("statement_date")
+            should_update = True
             
-            # Update payment info from statement
-            if "minimum_payment" in card_info and card_info["minimum_payment"]:
-                existing_card.minimum_payment = float(card_info["minimum_payment"])
-            if "no_interest_payment" in card_info and card_info["no_interest_payment"]:
-                existing_card.no_interest_payment = float(card_info["no_interest_payment"])
-            if "cat" in card_info and card_info["cat"]:
-                existing_card.cat = float(card_info["cat"])
+            if new_statement_date and existing_card.statement_date:
+                # Compare dates - only update if new is more recent
+                should_update = new_statement_date > existing_card.statement_date
+            
+            if should_update:
+                # Update existing card with new statement data
+                existing_card.name = card_info.get("name", existing_card.name)
+                existing_card.issuer = card_info.get("issuer", existing_card.issuer)
+                if card_info.get("last4"):
+                    existing_card.last4 = card_info.get("last4")
+                existing_card.credit_limit = float(card_info.get("credit_limit", existing_card.credit_limit))
+                existing_card.balance = float(card_info.get("balance", existing_card.balance))
+                existing_card.due_date_day = int(card_info.get("due_date_day") or existing_card.due_date_day)
+                existing_card.statement_date = new_statement_date
+                
+                # Update payment info from statement
+                if "minimum_payment" in card_info and card_info["minimum_payment"]:
+                    existing_card.minimum_payment = float(card_info["minimum_payment"])
+                if "no_interest_payment" in card_info and card_info["no_interest_payment"]:
+                    existing_card.no_interest_payment = float(card_info["no_interest_payment"])
+                if "cat" in card_info and card_info["cat"]:
+                    existing_card.cat = float(card_info["cat"])
+                
+                # Regenerate projections only if card was updated
+                self._generate_mock_projections(existing_card.user_id, existing_card.id)
                 
             return existing_card
         else:
@@ -117,6 +130,7 @@ class DataStore:
                 minimum_payment=float(card_info.get("minimum_payment", 0)) if card_info.get("minimum_payment") else None,
                 no_interest_payment=float(card_info.get("no_interest_payment", 0)) if card_info.get("no_interest_payment") else None,
                 cat=float(card_info.get("cat", 0)) if card_info.get("cat") else None,
+                statement_date=card_info.get("statement_date"),
             )
             self.cards[user_id].append(new_card)
             # Initialize projections for new card
@@ -203,12 +217,30 @@ class DataStore:
         else:
             balance_to_show = card.balance
         
+        # Get transactions for this card
+        txs = self.list_transactions(card.user_id, card.id)
+        transactions_summary = [
+            TransactionSummary(
+                id=t.id,
+                date=t.date,
+                description=t.description,
+                category=t.category,
+                amount=t.amount,
+                type=t.type,
+                installments=t.installments or t.installment_plan,
+                months_paid=t.months_paid or 0,  # Default to 0 if None
+            )
+            for t in txs
+        ]
+        
         return CardSummary(
             id=card.id,
             name=card.name,
+            last4=card.last4,
             balance=balance_to_show,
             upcoming_payment_date=self._next_due_date_iso(card.due_date_day),
             minimum_due=card.minimum_payment if card.minimum_payment else 0,
+            transactions=transactions_summary,
         )
 
     # Internal mock generators
@@ -218,6 +250,24 @@ class DataStore:
         txs: List[Transaction] = []
         for i in range(15):
             cat = sample_categories[i % len(sample_categories)]
+            # Some transactions have MSI (installments)
+            installments = None
+            months_paid = None
+            if i in [2, 5, 8]:  # 3 transactions with MSI
+                # MSI transactions at different stages:
+                # i=2: 3-month MSI, 1 month paid (started 1 month ago)
+                # i=5: 6-month MSI, 3 months paid (started 3 months ago) 
+                # i=8: 2-month MSI, 0 months paid (just started)
+                if i == 2:
+                    installments = 3
+                    months_paid = 1
+                elif i == 5:
+                    installments = 6
+                    months_paid = 3
+                else:  # i == 8
+                    installments = 2
+                    months_paid = 0
+            
             txs.append(
                 Transaction(
                     id=str(uuid.uuid4()),
@@ -226,8 +276,11 @@ class DataStore:
                     date=(base_date - timedelta(days=i)).date().isoformat(),
                     description=f"{cat} purchase #{i+1}",
                     category=cat,
-                    amount=round(20 + i * 3.1, 2),
+                    amount=round(200 + i * 15.5 + (installments or 1) * 100, 2),
                     type="charge",
+                    installment_plan=installments,
+                    installments=installments,
+                    months_paid=months_paid,
                 )
             )
         # Add a payment
@@ -265,11 +318,11 @@ class DataStore:
         
         # Get MSI transactions to calculate monthly installments for future projections
         txs = self.list_transactions(user_id, card_id)
-        msi_transactions = [tx for tx in txs if tx.type == "charge" and tx.installment_plan]
+        msi_transactions = [tx for tx in txs if tx.type == "charge" and tx.installment_plan and tx.installment_plan > 0]
         
         # Create list of (monthly_amount, months_remaining, total_original_amount) for each MSI
         # We assume all MSI transactions just started, so months_remaining = installment_plan
-        msi_schedule = [(tx.amount / tx.installment_plan, tx.installment_plan, tx.amount) for tx in msi_transactions]
+        msi_schedule = [(tx.amount / tx.installment_plan, tx.installment_plan, tx.amount) for tx in msi_transactions if tx.installment_plan]
         
         # Calculate total MSI debt (sum of all original amounts)
         total_msi_debt = sum(total_amt for _, _, total_amt in msi_schedule)
@@ -293,7 +346,7 @@ class DataStore:
         
         # Pre-calculate all no_interest_payments for each month to know total_debt
         all_no_interest_payments = []
-        temp_msi_schedule = [(tx.amount / tx.installment_plan, tx.installment_plan, tx.amount) for tx in msi_transactions]
+        temp_msi_schedule = [(tx.amount / tx.installment_plan, tx.installment_plan, tx.amount) for tx in msi_transactions if tx.installment_plan]
         
         # Month 0
         all_no_interest_payments.append(no_interest_payment)
@@ -315,7 +368,7 @@ class DataStore:
                     temp_msi_schedule[j] = (monthly_amt, months_left - 1, total_amt)
         
         # Reset msi_schedule for actual projection calculation
-        msi_schedule = [(tx.amount / tx.installment_plan, tx.installment_plan, tx.amount) for tx in msi_transactions]
+        msi_schedule = [(tx.amount / tx.installment_plan, tx.installment_plan, tx.amount) for tx in msi_transactions if tx.installment_plan]
         
         for i in range(6):
             month_date = (today + timedelta(days=30 * i))

@@ -4,9 +4,11 @@ import { AuthProvider } from './contexts/AuthContext';
 import { DataProvider } from './contexts/DataContext';
 import { HomeView } from './views/HomeView';
 import { LoginView } from './views/LoginView';
+import { CalendarView } from './views/CalendarView';
+import { InterestAnalysisView } from './views/InterestAnalysisView';
+import { ChatView } from './views/ChatView';
 import { ProtectedRoute } from './components/routing/ProtectedRoute';
 import { AppBar, Toolbar, Typography, Box, Button, Stack } from '@mui/material';
-import { CalendarView } from './views/CalendarView';
 import { useAuth } from './contexts/AuthContext';
 
 const Providers: React.FC<{ children: React.ReactNode }> = ({ children }) => (
@@ -27,7 +29,9 @@ const TopBar: React.FC = () => {
         {token && (
           <Stack direction="row" spacing={1} alignItems="center">
             <Button color="inherit" component={Link} to="/" variant={location.pathname==='/'? 'outlined':'text'}>Panel</Button>
+            <Button color="inherit" component={Link} to="/interests" variant={location.pathname==='/interests'? 'outlined':'text'}>Intereses</Button>
             <Button color="inherit" component={Link} to="/calendar" variant={location.pathname==='/calendar'? 'outlined':'text'}>Calendario</Button>
+            <Button color="inherit" component={Link} to="/chat" variant={location.pathname==='/chat'? 'outlined':'text'}>Asesor IA</Button>
             <Button color="inherit" onClick={logout}>Cerrar Sesión</Button>
           </Stack>
         )}
@@ -51,6 +55,16 @@ const App: React.FC = () => (
           <Route path="/calendar" element={
             <ProtectedRoute>
               <CalendarView />
+            </ProtectedRoute>
+          } />
+          <Route path="/interests" element={
+            <ProtectedRoute>
+              <InterestAnalysisView />
+            </ProtectedRoute>
+          } />
+          <Route path="/chat" element={
+            <ProtectedRoute>
+              <ChatView />
             </ProtectedRoute>
           } />
         </Routes>

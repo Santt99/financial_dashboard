@@ -149,7 +149,7 @@ class GeminiService:
         self.model = None
         if getattr(settings, "gemini_api_key", None):
             genai.configure(api_key=settings.gemini_api_key)
-            model_name = getattr(settings, "gemini_model", "gemini-1.5-pro")
+            model_name = getattr(settings, "gemini_model", "gemini-2.5-flash")
             self.model = genai.GenerativeModel(model_name)
             self.enabled = True
 
@@ -351,29 +351,31 @@ class GeminiService:
         msi_section = data.get("msi", {})
         msi_plans = msi_section.get("plans", [])
         for msi_plan in msi_plans:
-            # Only add MSI if it has months remaining
-            months_remaining = msi_plan.get("months_remaining", 0)
-            if months_remaining and months_remaining > 0:
-                total_amount = self._normalize_amount(msi_plan.get("total_purchase_amount", 0))
-                installment_total = msi_plan.get("installment_total", 1)
-                purchase_date = msi_plan.get("purchase_date", "")
-                iso_purchase_date = self._normalize_date(purchase_date, cutoff_year=cutoff_year)
-                merchant = msi_plan.get("merchant", "MSI Purchase")
-                
-                # Create a transaction for this MSI plan
-                msi_tx = Transaction(
-                    id=str(uuid.uuid4()),
-                    user_id=user_id,
-                    card_id=card_id,
-                    date=iso_purchase_date or datetime.utcnow().date().isoformat(),
-                    description=f"{merchant} (MSI {msi_plan.get('installment_index', 1)} of {installment_total})",
-                    category="MSI",
-                    amount=total_amount,
-                    type="charge",
-                    installment_plan=installment_total,  # Total months for the plan
-                )
-                transactions.append(msi_tx)
-                print(f"[GeminiService] Added MSI transaction: {merchant} - ${total_amount} over {installment_total} months")
+            # Add MSI transactions regardless of months_remaining (even if completed: 6/6)
+            # We want to track all MSI history, not just pending ones
+            total_amount = self._normalize_amount(msi_plan.get("total_purchase_amount", 0))
+            installment_total = msi_plan.get("installment_total", 1)
+            installment_index = msi_plan.get("installment_index", installment_total)  # Defaults to total if not provided (completed)
+            purchase_date = msi_plan.get("purchase_date", "")
+            iso_purchase_date = self._normalize_date(purchase_date, cutoff_year=cutoff_year)
+            merchant = msi_plan.get("merchant", "MSI Purchase")
+            
+            # Create a transaction for this MSI plan
+            msi_tx = Transaction(
+                id=str(uuid.uuid4()),
+                user_id=user_id,
+                card_id=card_id,
+                date=iso_purchase_date or datetime.utcnow().date().isoformat(),
+                description=f"{merchant} (MSI {installment_index} of {installment_total})",
+                category="MSI",
+                amount=total_amount,
+                type="charge",
+                installment_plan=installment_total,  # Total months for the plan
+                installments=installment_total,  # Alias for frontend
+                months_paid=installment_index - 1,  # Months already paid (0-based): if index=6, then 5 months paid
+            )
+            transactions.append(msi_tx)
+            print(f"[GeminiService] Added MSI transaction: {merchant} - ${total_amount} over {installment_total} months (currently at month {installment_index})")
 
         return card_info, transactions
 
@@ -398,9 +400,9 @@ class GeminiService:
             "minimum_payment": self._normalize_amount(summary.get("minimum_payment")),
             "no_interest_payment": self._normalize_amount(summary.get("no_interest_payment")),
             "cat": self._normalize_amount(summary.get("cat")),
-            # opcional: podrías incluir currency, cutoff/period dates si tu UI los necesita
             "currency": summary.get("currency"),
             "cutoff_date": summary.get("cutoff_date"),
+            "statement_date": summary.get("cutoff_date"),  # Use cutoff_date as statement date to prevent stale updates
             "period_start": summary.get("period_start"),
             "period_end": summary.get("period_end"),
             "due_date": summary.get("due_date"),
@@ -553,6 +555,64 @@ class GeminiService:
     def _create_extraction_prompt(self) -> str:
         """Return the robust MX extraction prompt."""
         return PROMPT_MX
+
+    # ---------------------------
+    # Chat about finances
+    # ---------------------------
+
+    def chat_about_finances(self, user_question: str, financial_context: str) -> str:
+        """
+        Chat with Gemini about user's financial situation.
+        
+        Args:
+            user_question: The user's question about their finances
+            financial_context: Summary of user's cards, debts, and MSI
+            
+        Returns:
+            Gemini's response in Spanish
+        """
+        # Use gemini-2.5-flash model for better quality responses
+        model = genai.GenerativeModel("gemini-2.5-flash")
+        
+        prompt = self._build_chat_prompt(user_question, financial_context)
+        response = model.generate_content(prompt)
+        return response.text if response else "No pude procesar tu pregunta. Por favor intenta de nuevo."
+
+    def get_streaming_response(self, user_question: str, financial_context: str):
+        """Get streaming response from Gemini."""
+        model = genai.GenerativeModel("gemini-2.5-flash")
+        prompt = self._build_chat_prompt(user_question, financial_context)
+        return model.generate_content(prompt, stream=True)
+
+    def _build_chat_prompt(self, question: str, context: str) -> str:
+        """Build chat prompt with user context."""
+        return f"""Eres un asesor financiero personal experto en gestión de deudas y tarjetas de crédito mexicanas.
+
+CONTEXTO FINANCIERO DEL USUARIO:
+{context}
+
+PREGUNTA:
+{question}
+
+INSTRUCCIONES:
+1. Si el usuario saluda, responde brevemente sin mostrar datos no solicitados (máx 2-3 líneas).
+2. Si pregunta sobre sus finanzas, usa el contexto y estructura con **títulos**, listas y formato claro.
+3. NO muestres información financiera a menos que la pida explícitamente.
+4. Sé conciso y práctico.
+   - Sé claro y conciso
+
+3. Formato:
+   - Respuestas breves y directas
+   - Usa **negrita** para puntos clave
+   - Números (1., 2., 3.) para listas ordenadas
+   - Guiones (-) para listas sin orden
+
+4. Tono:
+   - Amable y profesional
+   - Evita tecnicismos
+   - No bombardees con información
+
+Responde ahora:"""
 
 
 # Singleton instance
